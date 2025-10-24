@@ -8,8 +8,8 @@
 <body>
 	<main>
 		<div class="search-container">
-			<input type="text" name="search_query" id="search_query">
-			<button id="go_button">Estimate</button>
+			<input type="text" name="search_query" id="search_query" placeholder="e.g. Sonos One">
+			<button id="estimate_button">Estimate</button>
 		</div>
 
 		<div class="estimate-container">
@@ -78,7 +78,7 @@
 			return { estimate, range, samples: totals.length, confidence };
 		}
 
-		const estimate_button = document.getElementById('go_button');
+		const estimate_button = document.getElementById('estimate_button');
 		estimate_button.addEventListener('click', function(){
 			estimate_button.disabled = true;
 			const search_query_input = document.getElementById('search_query');
