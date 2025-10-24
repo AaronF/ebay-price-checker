@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>eBay Price Checker</title>
+</head>
+<body>
+	<main>
+		<div class="search-container">
+			<input type="text" name="search_query" id="search_query">
+			<button id="go_button">Estimate</button>
+		</div>
+
+		<div class="estimate-container">
+			<span>Estimate: <span id="estimate">£xxx</span></span>
+			<span>Range: <span id="range">£xxx - £xxx</span></span>
+			<span>Samples: <span id="samples">xxx</span></span>
+			<span>Confidence: <span id="confidence">xxx</span></span>
+		</div>
+	</main>
+
+	<script type="text/javascript">
+		async function searchEbay(query){
+			const url = new URL('/search.php', location.origin);
+			url.searchParams.set('q', query);
+			url.searchParams.set('limit', '250');
+
+			const response = await fetch(url.toString());
+			if(!response.ok) throw new Error('Search failed: ' + response.status);
+			return response.json();
+		}
+
+		function estimate_value(data, opts = {}) {
+			const {
+				min_samples = 3,		// require at least this many to trust the estimate
+				trim_fraction = 0.15,	// 15% off each tail
+				min_price = 5,			// drop silly-low totals
+				max_price = 10000		// drop silly-high totals
+			} = opts;
+
+			const items = Array.isArray(data?.itemSummaries) ? data.itemSummaries : [];
+
+			// Build total-to-buyer totals
+			let totals = items.map(it => {
+				const price = Number(it?.price?.value ?? 0);
+				const ship  = Number(it?.shippingOptions?.[0]?.shippingCost?.value ?? 0);
+				return price + ship;
+			}).filter(n => Number.isFinite(n) && n >= min_price && n <= max_price);
+
+			if (totals.length < min_samples) {
+				return { estimate: null, range: null, samples: totals.length, confidence: 'low' };
+			}
+
+			totals.sort((a, b) => a - b);
+
+			// Trim tails
+			const trim_n = Math.floor(totals.length * trim_fraction);
+			const core = totals.slice(trim_n, totals.length - trim_n);
+
+			// Median
+			const mid = Math.floor(core.length / 2);
+			const median = core.length % 2 ? core[mid] : (core[mid - 1] + core[mid]) / 2;
+
+			const estimate = Number(median.toFixed(2));
+			const range = [
+				Number(core[0].toFixed(2)),
+				Number(core[core.length - 1].toFixed(2))
+			];
+
+			// Simple confidence heuristic
+			const spread = range[1] - range[0];
+			const cv = estimate ? spread / estimate : Infinity;
+			const confidence = core.length >= 20
+				? (cv < 0.25 ? 'high' : 'medium')
+				: (cv < 0.2 ? 'medium' : 'low');
+
+			return { estimate, range, samples: totals.length, confidence };
+		}
+
+		const estimate_button = document.getElementById('go_button');
+		estimate_button.addEventListener('click', function(){
+			estimate_button.disabled = true;
+			const search_query_input = document.getElementById('search_query');
+
+			const estimate_container = document.querySelector('.estimate-container');
+			estimate_container.style.display = 'none';
+			const estimate_result = document.getElementById('estimate');
+			const range_result = document.getElementById('range');
+			const samples_result = document.getElementById('samples');
+			const confidence_result = document.getElementById('confidence');
+
+			if(search_query_input.value){
+				(async() => {
+					try {
+						const data = await searchEbay(search_query_input.value);
+						const est_value = estimate_value(data);
+						
+						estimate_container.style.display = 'flex';
+						estimate_button.disabled = false;
+
+						estimate_result.textContent = est_value.estimate;
+						range_result.textContent = est_value.range[0] + ' - ' + est_value.range[1];
+						samples_result.textContent = est_value.samples;
+						confidence_result.textContent = est_value.confidence;
+					} catch(e){
+						estimate_container.style.display = 'none';
+						estimate_button.disabled = false;
+						console.log(e.message);
+					}
+				})();
+			}
+		});
+	</script>
+
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+		}
+
+		html,
+		body {
+			width: 100vw;
+			height: 100vh;
+		}
+
+		body {
+			background-color: #232C33;
+			color: #232C33;
+			font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+		}
+
+		main {
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+		}
+
+		.search-container {
+			display: flex;
+			align-items: center;
+			column-gap: 8px;
+			padding: 24px;
+			background-color: #fff;
+			border-radius: 8px;
+		}
+
+		.search-container input[type=text]{
+			border-radius: 4px;
+			border: 1px solid #C7D6D5;
+			padding: 12px 18px;
+		}
+
+		.search-container button {
+			padding: 12px;
+			background-color: #232C33;
+			color: #fff;
+			border: none;
+			border-radius: 4px;
+		}
+
+		.search-container button:disabled {
+			pointer-events: none;
+			opacity: 0.75;
+		}
+
+		.estimate-container {
+			display: none;
+			flex-direction: column;
+			row-gap: 8px;
+			justify-content: center;
+			column-gap: 8px;
+			padding: 24px;
+			background-color: #fff;
+			border-radius: 8px;
+			margin-top: 24px;
+			text-align: left;
+		}
+	</style>
+</body>
+</html>
